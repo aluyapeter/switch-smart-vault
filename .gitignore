@@ -1,0 +1,14 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# --- Solidity/Compilers ---
+build/
+artifacts/
+cache/
+
+# --- IDE Settings ---
+.vscode/
+.idea/
