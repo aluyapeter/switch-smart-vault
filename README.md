@@ -79,7 +79,7 @@ If you want to run this code on your own machine:
 ### 1. Clone the Repository
 
 ```bash
-git clone [https://github.com/YOUR_USERNAME/switch-savings.git](https://github.com/YOUR_USERNAME/switch-savings.git)
+git clone https://github.com/aluyapeter/switch-smart-vault.git
 cd switch-savings
 ```
 
