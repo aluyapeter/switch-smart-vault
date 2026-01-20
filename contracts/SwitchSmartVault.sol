@@ -43,7 +43,6 @@ contract SwitchSmartVault {
         }
         
         userLock.amount += msg.value;
-        userLock.unlockTime = newUnlockTime;
         userLock.title = _title;
 
         emit VaultDeposit(msg.sender, _title, userLock.amount, newUnlockTime);

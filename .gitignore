@@ -1,14 +1,30 @@
-# --- Python ---
+.env
+.DS_Store
+node_modules/
+
 __pycache__/
 *.py[cod]
 venv/
-.env
 
-# --- Solidity/Compilers ---
 build/
 artifacts/
 cache/
 
-# --- IDE Settings ---
+dist/
+dist-ssr/
+*.local
+
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
