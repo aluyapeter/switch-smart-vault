@@ -80,7 +80,7 @@ If you want to run this code on your own machine:
 
 ```bash
 git clone https://github.com/aluyapeter/switch-smart-vault.git
-cd switch-savings
+cd switch-smart-vault
 ```
 
 ### 2. Smart Contract (Backend)
