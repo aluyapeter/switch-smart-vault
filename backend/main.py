@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     if w3.is_connected():
         print(f"Connected to Sepolia. Block: {w3.eth.block_number}")
     else:
-        print("ailed to connect to Sepolia")
+        print("failed to connect to Sepolia")
 
     try:
         with open("deployment_config.json", "r") as f:
