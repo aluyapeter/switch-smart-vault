@@ -1,0 +1,97 @@
+@use "../styles/variables" as *;
+
+.dashboard {
+  padding: 2rem;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0 auto;
+  // display: flex;
+  // flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  // border: 10px solid red;
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 1rem;
+  // border: 10px solid red;
+
+  h1 {
+    font-size: 2rem;
+  }
+}
+
+.dash {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  // border: 1px solid blue;
+}
+.addressBadge {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-family: monospace;
+  color: $text-muted;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 0.5rem;
+}
+
+.debug {
+  // border: 5px solid green;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  gap: 30px;
+  justify-content: space-between;
+}
+
+.logoutBtn {
+  background: transparent;
+  border: 1px solid $error;
+  color: $error;
+  padding: 0.5rem 1.5rem;
+  border-radius: 8px;
+  // border: 10px solid red;
+
+  &:hover {
+    background: $error;
+    color: white;
+  }
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.emptyState {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 4rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  color: $text-muted;
+}
+
+.createBtn {
+  background: $primary;
+  color: white;
+  padding: 0.5rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  // border: 10px solid red;
+
+  &:hover {
+    background: $primary-hover;
+  }
+}

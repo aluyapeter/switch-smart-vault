@@ -1,60 +1,50 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from web3 import Web3
-from dotenv import load_dotenv
-import json
 import os
+import secrets
+import jwt
+from datetime import datetime, timedelta
+from contextlib import asynccontextmanager
+from typing import List
+
+from fastapi import FastAPI, Depends, HTTPException, Body, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from web3 import Web3
+from eth_account.messages import encode_defunct
+from dotenv import load_dotenv
+
+from database import get_db
+from models import User, Lock
+import schemas
 
 load_dotenv()
+
+JWT_SECRET = os.getenv("JWT_SECRET")
+ALGORITHM = "HS256"
+RPC_URL = os.getenv("RPC_URL", "http://127.0.0.1:8545")
+
+if not JWT_SECRET:
+    raise ValueError("Fatal Error: JWT_SECRET_KEY is missing in .env")
 
 blockchain_state = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Starting up Switch API (Sepolia Mode)...")
-
-    rpc_url = os.getenv("RPC_URL")
-    if not rpc_url:
-        print("Error: RPC_URL not found in .env")
+    print("Starting Switch API...")
     
-    w3 = Web3(Web3.HTTPProvider(rpc_url))
-    
+    w3 = Web3(Web3.HTTPProvider(RPC_URL))
     if w3.is_connected():
-        print(f"Connected to Sepolia. Block: {w3.eth.block_number}")
+        print(f"Connected to Blockchain at {RPC_URL}")
+        blockchain_state["w3"] = w3
     else:
-        print("ailed to connect to Sepolia")
-
-    try:
-        with open("deployment_config.json", "r") as f:
-            config = json.load(f)
-            contract_address = config["contract_address"]
-    except FileNotFoundError:
-        print("deployment_config.json not found. Did you run deploy_sepolia.py?")
-        contract_address = None
-
-    try:
-        with open("SwitchSmartVault_Build.json", "r") as f:
-            build_data = json.load(f)
-            abi = build_data["abi"]
-    except FileNotFoundError:
-        with open("backend/SwitchSmartVault_Build.json", "r") as f:
-            build_data = json.load(f)
-            abi = build_data["abi"]
-
-    if contract_address:
-        contract = w3.eth.contract(address=contract_address, abi=abi)
-        blockchain_state["contract"] = contract
-        print(f"Linked to Contract: {contract_address}")
-    
-    blockchain_state["w3"] = w3
+        print(f"Warning: Could not connect to Blockchain at {RPC_URL}")
     
     yield
-    
     print("Shutting down...")
     blockchain_state.clear()
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, title="Switch V2 API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,71 +54,120 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+security = HTTPBearer()
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(hours=24)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: AsyncSession = Depends(get_db)):
+    token = credentials.credentials 
+    
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        address: str = payload.get("sub")
+        if address is None:
+            raise credentials_exception
+    except Exception:
+        raise credentials_exception
+        
+    result = await db.execute(select(User).where(User.address == address))
+    user = result.scalars().first()
+    if user is None:
+        raise credentials_exception
+    return user
+
+# --- AUTHENTICATION ENDPOINTS ---
+
+@app.post("/auth/nonce", response_model=dict)
+async def generate_nonce(request: schemas.NonceRequest, db: AsyncSession = Depends(get_db)):
+    """User asks for a challenge (nonce)"""
+    nonce = secrets.token_hex(16)
+    checksum_addr = Web3.to_checksum_address(request.address)
+    
+    result = await db.execute(select(User).where(User.address == checksum_addr))
+    user = result.scalars().first()
+    
+    if not user:
+        user = User(address=checksum_addr)
+        db.add(user)
+    
+    user.nonce = nonce # type: ignore
+    await db.commit()
+    
+    return {"nonce": nonce}
+
+@app.post("/auth/verify", response_model=dict)
+async def verify_signature(
+    request: schemas.VerifyRequest, 
+    db: AsyncSession = Depends(get_db)
+):
+    """User submits the signed challenge"""
+    checksum_addr = Web3.to_checksum_address(request.address)
+    
+    result = await db.execute(select(User).where(User.address == checksum_addr))
+    user = result.scalars().first()
+    
+    if not user or not user.nonce: # type: ignore
+        raise HTTPException(status_code=400, detail="Nonce not generated for this address")
+    
+    message_text = f"Sign this nonce to login: {user.nonce}"
+    encoded_message = encode_defunct(text=message_text)
+    
+    w3 = blockchain_state.get("w3")
+    if not w3:
+        raise HTTPException(status_code=503, detail="Blockchain connection unavailable")
+
+    try:
+        recovered_address = w3.eth.account.recover_message(encoded_message, signature=request.signature)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid signature format")
+        
+    if recovered_address != checksum_addr:
+        raise HTTPException(status_code=401, detail="Signature invalid")
+        
+    user.nonce = None # type: ignore
+    await db.commit()
+    
+    token = create_access_token({"sub": checksum_addr})
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@app.get("/users/me", response_model=schemas.UserResponse)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    """Returns the logged-in user's profile - Auto formatted by Schema"""
+    return current_user
+
+# --- UPDATED LOCK ENDPOINTS ---
+
+@app.get("/users/{address}/locks", response_model=List[schemas.LockResponse])
+async def get_user_locks(address: str, db: AsyncSession = Depends(get_db)):
+    """
+    Returns a clean list of locks. 
+    The 'amount' will be auto-converted to string by the schema.
+    """
+    checksum_addr = Web3.to_checksum_address(address)
+    result = await db.execute(select(Lock).where(Lock.owner_address == checksum_addr))
+    locks = result.scalars().all()
+    return locks
+
+@app.get("/locks", response_model=List[schemas.LockResponse])
+async def get_my_locks(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """
+    Returns all locks belonging to the logged-in user.
+    """
+    result = await db.execute(select(Lock).where(Lock.owner_address == current_user.address))
+    locks = result.scalars().all()
+    
+    return locks
+
 @app.get("/")
 def read_root():
-    return {
-        "status":"Switch API is running",
-        "contract": blockchain_state["contract"].address
-    }
-
-@app.get("/lock/{user_address}")
-def get_user_lock(user_address: str):
-    w3 = blockchain_state.get("w3")
-    contract = blockchain_state.get("contract")
-
-    if not w3 or not contract:
-        raise HTTPException(status_code=503, detail="Blockchain not connected")
-
-    if not w3.is_address(user_address):
-        raise HTTPException(status_code=400, detail="Invalid Address")
-    
-    checksum_address = w3.to_checksum_address(user_address)
-
-    lock_data = contract.functions.locks(checksum_address).call()
-
-    return {
-        "user": checksum_address,
-        "title": lock_data[0],
-        "amount_wei": lock_data[1],
-        "amount_eth": float(w3.from_wei(lock_data[1], 'ether')), # Helper for frontend
-        "unlock_time": lock_data[2],
-        "is_locked": lock_data[1] > 0
-    }
-
-@app.post("/debug/create-lock")
-def debug_create_lock(amount_ether: float, time_seconds: int):
-    """
-    Cheat endpoint to create a lock for the 'deployer' account
-    so we have data to look at.
-    """
-    w3 = blockchain_state["w3"]
-    contract = blockchain_state["contract"]
-    deployer = blockchain_state["deployer"]
-
-    tx_hash = contract.functions.lockFunds("Debug Savings", time_seconds).transact({
-        "from": deployer,
-        "value": w3.to_wei(amount_ether, "ether")
-    })
-    w3.eth.wait_for_transaction_receipt(tx_hash)
-    
-    return {"status": "Lock Created", "user": deployer}
-
-@app.get("/activity/{user_address}")
-def get_recent_activity(user_address: str):
-    w3 = blockchain_state["w3"]
-    contract = blockchain_state["contract"]
-
-    events = contract.events.VaultDeposit.get_logs(from_block=0)
-    
-    user_activity = []
-    
-    for event in events:
-        if event["args"]["user"] == w3.to_checksum_address(user_address):
-            user_activity.append({
-                "title": event["args"]["title"],
-                "amount": event["args"]["totalAmount"],
-                "unlock_time": event["args"]["unlockTime"],
-                "tx_hash": event["transactionHash"].hex()
-            })
-
-    return {"activity": user_activity}
+    return {"status": "Switch API is Online"}
