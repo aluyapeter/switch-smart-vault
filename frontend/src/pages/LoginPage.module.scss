@@ -1,0 +1,64 @@
+@use "../styles/variables" as *;
+
+.container {
+  @include flex-center;
+  flex-direction: column;
+  height: 100vh;
+  gap: 2rem;
+  // Subtle radial background
+  background: radial-gradient(
+    circle at top right,
+    rgba($primary, 0.15),
+    transparent 40%
+  );
+}
+
+.card {
+  // Use glass card logic but explicit sizing for login
+  @include glass-card;
+  padding: 3rem;
+  width: 60%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.title {
+  font-size: 2.5rem;
+  // margin-bottom: 2.5rem;
+  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.subtitle {
+  color: $text-muted;
+  // margin-bottom: 2rem;
+}
+
+.button {
+  width: 60%;
+  padding: 0.8rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 1rem;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  &.connect {
+    background-color: $primary;
+    &:hover {
+      background-color: $primary-hover;
+    }
+  }
+
+  &.login {
+    background-color: $bg-dark;
+    width: 70%;
+    // box-shadow: 0 0 15px rgba($success, 0.3);
+    &:hover {
+      filter: brightness(1.1);
+      background-color: $primary-hover;
+    }
+  }
+}

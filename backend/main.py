@@ -3,6 +3,7 @@ import secrets
 import jwt
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException, Body, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,7 @@ from dotenv import load_dotenv
 
 from database import get_db
 from models import User, Lock
+import schemas
 
 load_dotenv()
 
@@ -84,12 +86,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
 # --- AUTHENTICATION ENDPOINTS ---
 
-@app.post("/auth/nonce")
-async def generate_nonce(address: str = Body(..., embed=True), db: AsyncSession = Depends(get_db)):
+@app.post("/auth/nonce", response_model=dict)
+async def generate_nonce(request: schemas.NonceRequest, db: AsyncSession = Depends(get_db)):
     """User asks for a challenge (nonce)"""
     nonce = secrets.token_hex(16)
-    
-    checksum_addr = Web3.to_checksum_address(address)
+    checksum_addr = Web3.to_checksum_address(request.address)
     
     result = await db.execute(select(User).where(User.address == checksum_addr))
     user = result.scalars().first()
@@ -103,14 +104,13 @@ async def generate_nonce(address: str = Body(..., embed=True), db: AsyncSession 
     
     return {"nonce": nonce}
 
-@app.post("/auth/verify")
+@app.post("/auth/verify", response_model=dict)
 async def verify_signature(
-    address: str = Body(...), 
-    signature: str = Body(...), 
+    request: schemas.VerifyRequest, 
     db: AsyncSession = Depends(get_db)
 ):
     """User submits the signed challenge"""
-    checksum_addr = Web3.to_checksum_address(address)
+    checksum_addr = Web3.to_checksum_address(request.address)
     
     result = await db.execute(select(User).where(User.address == checksum_addr))
     user = result.scalars().first()
@@ -126,7 +126,7 @@ async def verify_signature(
         raise HTTPException(status_code=503, detail="Blockchain connection unavailable")
 
     try:
-        recovered_address = w3.eth.account.recover_message(encoded_message, signature=signature)
+        recovered_address = w3.eth.account.recover_message(encoded_message, signature=request.signature)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid signature format")
         
@@ -137,23 +137,35 @@ async def verify_signature(
     await db.commit()
     
     token = create_access_token({"sub": checksum_addr})
-    
     return {"access_token": token, "token_type": "bearer"}
 
 
-@app.get("/users/me")
+@app.get("/users/me", response_model=schemas.UserResponse)
 async def read_users_me(current_user: User = Depends(get_current_user)):
-    """Returns the logged-in user's profile"""
+    """Returns the logged-in user's profile - Auto formatted by Schema"""
     return current_user
 
-@app.get("/users/{address}/locks")
+# --- UPDATED LOCK ENDPOINTS ---
+
+@app.get("/users/{address}/locks", response_model=List[schemas.LockResponse])
 async def get_user_locks(address: str, db: AsyncSession = Depends(get_db)):
     """
-    This relies on the Indexer running in the background.
+    Returns a clean list of locks. 
+    The 'amount' will be auto-converted to string by the schema.
     """
     checksum_addr = Web3.to_checksum_address(address)
     result = await db.execute(select(Lock).where(Lock.owner_address == checksum_addr))
     locks = result.scalars().all()
+    return locks
+
+@app.get("/locks", response_model=List[schemas.LockResponse])
+async def get_my_locks(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """
+    Returns all locks belonging to the logged-in user.
+    """
+    result = await db.execute(select(Lock).where(Lock.owner_address == current_user.address))
+    locks = result.scalars().all()
+    
     return locks
 
 @app.get("/")

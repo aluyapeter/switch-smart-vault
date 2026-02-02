@@ -7,7 +7,14 @@ from database import async_session, engine
 from models import User, Lock
 
 RPC_URL = os.getenv("RPC_URL", "http://127.0.0.1:8545")
-CONTRACT_ADDRESS = "0xF7bD73D82144740f56B5A1EBaAbE5B00FF50df78" 
+try:
+    with open("deployment_config.json", "r") as f:
+        config = json.load(f)
+        CONTRACT_ADDRESS = config["contract_address"]
+        print(f"Loaded Contract: {CONTRACT_ADDRESS}")
+except FileNotFoundError:
+    print("ERROR: deployment_config.json not found. Run 'brownie run scripts/seed_data.py' first.")
+    exit(1)
 
 async def get_contract(w3):
     path = "../build/contracts/SwitchV2.json"
