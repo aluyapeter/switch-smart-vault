@@ -39,7 +39,6 @@ export const useWithdraw = () => {
 
       setStatus("Success! Funds sent.");
 
-      //  refresh of the dashboard data
       queryClient.invalidateQueries({ queryKey: ["locks"] });
 
       setIsLoading(false);

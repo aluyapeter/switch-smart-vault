@@ -20,7 +20,6 @@ def main():
     tx.wait(1)
     print("✅ Lock Created!")
 
-    # --- AUTOMATION START ---
     print("\n" + "="*30)
     print("SAVING CONFIGURATION...")
     

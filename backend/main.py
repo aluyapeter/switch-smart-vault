@@ -4,11 +4,13 @@ import jwt
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from typing import List
+import threading
+from indexer import start_indexer
 
 from fastapi import FastAPI, Depends, HTTPException, Body, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from web3 import Web3
 from eth_account.messages import encode_defunct
@@ -21,17 +23,22 @@ import schemas
 load_dotenv()
 
 JWT_SECRET = os.getenv("JWT_SECRET")
-ALGORITHM = "HS256"
+ALGORITHM = os.getenv("ALGORITHM")
 RPC_URL = os.getenv("RPC_URL", "http://127.0.0.1:8545")
 
 if not JWT_SECRET:
     raise ValueError("Fatal Error: JWT_SECRET_KEY is missing in .env")
+if not ALGORITHM:
+    raise ValueError("Fatal Error: ALGORITHM is missing in .env")
 
 blockchain_state = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting Switch API...")
+
+    indexer_thread = threading.Thread(target=start_indexer, daemon=True)
+    indexer_thread.start()
     
     w3 = Web3(Web3.HTTPProvider(RPC_URL))
     if w3.is_connected():
@@ -71,7 +78,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM or "HS256"])
         address: str = payload.get("sub")
         if address is None:
             raise credentials_exception
@@ -167,6 +174,29 @@ async def get_my_locks(current_user: User = Depends(get_current_user), db: Async
     locks = result.scalars().all()
     
     return locks
+
+@app.get("/stats")
+async def get_platform_stats(db: AsyncSession = Depends(get_db)):
+    """
+    Returns public platform statistics for the Landing Page.
+    """
+    result_count = await db.execute(select(func.count(Lock.id)))
+    total_locks = result_count.scalar() or 0
+
+    result_tvl = await db.execute(select(func.sum(Lock.amount)).where(Lock.withdrawn == False))
+    
+    tvl_wei = int(result_tvl.scalar() or 0)
+    
+    tvl_eth = Web3.from_wei(tvl_wei, 'ether')
+
+    result_users = await db.execute(select(func.count(User.id)))
+    total_users = result_users.scalar() or 0
+
+    return {
+        "total_locks": total_locks,
+        "tvl_eth": float(tvl_eth),
+        "total_users": total_users
+    }
 
 @app.get("/")
 def read_root():
