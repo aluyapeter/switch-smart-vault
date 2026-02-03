@@ -12,4 +12,5 @@ export interface ApiLock {
 export interface UILock extends ApiLock {
   amountEth: string;
   status: "Locked" | "Ready" | "Withdrawn";
+  isOptimistic?: boolean;
 }

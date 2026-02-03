@@ -1,119 +1,195 @@
 import asyncio
 import os
 import json
+import time
 from web3 import Web3
 from sqlalchemy import select, update
-from database import async_session, engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from models import User, Lock
+from dotenv import load_dotenv
 
-RPC_URL = os.getenv("RPC_URL", "http://127.0.0.1:8545")
+load_dotenv()
+
+# --- CONFIGURATION ---
+RPC_URL = os.getenv("RPC_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Auto-fix DB URL for asyncpg (Render/Supabase compatibility)
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+if not RPC_URL:
+    print("❌ CRITICAL: RPC_URL is missing from .env")
+    
+if not DATABASE_URL:
+    print("❌ CRITICAL: DATABASE_URL is missing from .env")
+
+# FIX 1: Tell Pylance "We promise this is a string"
+assert DATABASE_URL is not None, "DATABASE_URL must be set"
+
+# --- LOCAL DB SETUP (THREAD SAFE) ---
+indexer_engine = create_async_engine(DATABASE_URL, echo=False)
+IndexerSession = async_sessionmaker(
+    bind=indexer_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False
+)
+
+# Load Contract Config
+CONTRACT_ADDRESS = ""
+START_BLOCK = 10179178
 try:
     with open("deployment_config.json", "r") as f:
         config = json.load(f)
-        CONTRACT_ADDRESS = config["contract_address"]
-        print(f"Loaded Contract: {CONTRACT_ADDRESS}")
+        CONTRACT_ADDRESS = config["contract_address"].strip()
+        START_BLOCK = config.get("deployed_at_block", 10179178) 
 except FileNotFoundError:
-    print("ERROR: deployment_config.json not found. Run 'brownie run scripts/seed_data.py' first.")
-    exit(1)
+    print("⚠️ Config not found. Using defaults.")
 
-async def get_contract(w3):
-    path = "../build/contracts/SwitchV2.json"
+# --- HELPER FUNCTIONS ---
 
-    try:
-        with open(path, "r") as f:
-            data = json.load(f)
-            abi = data["abi"]
-        return w3.eth.contract(address=CONTRACT_ADDRESS, abi=abi)
-    except FileNotFoundError:
-        print(f" Error: Could not find file at {path}")
-        print("   Make sure you are running this from the 'backend' folder!")
+def get_contract(w3):
+    possible_paths = ["../build/contracts/SwitchV2.json", "build/contracts/SwitchV2.json"]
+    abi = None
+    
+    for path in possible_paths:
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+                abi = data["abi"]
+                break
+        except FileNotFoundError:
+            continue
+            
+    if not abi:
+        print("❌ ERROR: Could not find ABI file.")
         return None
 
+    safe_address = w3.to_checksum_address(CONTRACT_ADDRESS)
+    return w3.eth.contract(address=safe_address, abi=abi)
+
 async def process_lock_created(session, event, w3):
-    args = event['args']
-    user_address = args['user']
-    lock_id = args['lockId']
+    try:
+        args = event['args']
+        user_address = args['user']
+        lock_id = args['lockId']
+        
+        result = await session.execute(select(User).where(User.address == user_address))
+        user = result.scalars().first()
+        
+        if not user:
+            print(f"👤 New User detected: {user_address}")
+            user = User(address=user_address)
+            session.add(user)
+            await session.flush()
+
+        result = await session.execute(select(Lock).where(Lock.id == lock_id))
+        existing_lock = result.scalars().first()
+
+        if not existing_lock:
+            block_data = w3.eth.get_block(event['blockNumber'])
+            timestamp = block_data['timestamp']
+
+            new_lock = Lock(
+                id=lock_id,
+                owner_address=user_address,
+                amount=str(args['amount']), 
+                unlock_timestamp=args['unlockTimestamp'],
+                created_at=timestamp,
+                goal_name=args['goalName'],
+                withdrawn=False,
+                tx_hash=event['transactionHash'].hex()
+            )
+            session.add(new_lock)
+            print(f"🔐 Indexed Lock #{lock_id}")
+            
+    except Exception as e:
+        print(f"⚠️ Error processing lock: {e}")
+
+# --- MAIN WORKER LOOP ---
+
+async def _indexer_logic():
+    """The async logic that runs inside the thread"""
+    print("🚀 Indexer Thread Started...")
     
-    print(f"   found lock {lock_id} for {user_address}")
-
-    result = await session.execute(select(User).where(User.address == user_address))
-    user = result.scalars().first()
+    # FIX 2: Added Timeout! This prevents the indexer from hanging silently.
+    w3 = Web3(Web3.HTTPProvider(RPC_URL, request_kwargs={'timeout': 10}))
     
-    if not user:
-        print(f"   New User detected: {user_address}")
-        user = User(address=user_address)
-        session.add(user)
-        await session.flush()
-
-    result = await session.execute(select(Lock).where(Lock.id == lock_id))
-    existing_lock = result.scalars().first()
-
-    if not existing_lock:
-        new_lock = Lock(
-            id=lock_id,
-            owner_address=user_address,
-            amount=args['amount'],
-            unlock_timestamp=args['unlockTimestamp'],
-            created_at=w3.eth.get_block(event['blockNumber'])['timestamp'],
-            goal_name=args['goalName'],
-            withdrawn=False,
-            tx_hash=event['transactionHash'].hex()
-        )
-        session.add(new_lock)
-        print(f"    Indexed Lock #{lock_id}")
-
-async def process_withdrawal(session, event):
-    args = event['args']
-    lock_id = args['lockId']
-    print(f"   found withdrawal for #{lock_id}")
-    
-    await session.execute(
-        update(Lock).where(Lock.id == lock_id).values(withdrawn=True)
-    )
-
-async def sync_events():
-    w3 = Web3(Web3.HTTPProvider(RPC_URL))
-    print(f" Connected to Blockchain: {w3.is_connected()}")
-    
-    contract = await get_contract(w3)
-    if not contract:
+    if not w3.is_connected():
+        print("❌ Indexer could not connect to RPC.")
         return
 
-    print(" Starting Indexer Loop... (Press Ctrl+C to stop)")
+    contract = get_contract(w3)
+    if not contract:
+        print("❌ Indexer halted: No contract.")
+        return
+
+    current_sync_block = START_BLOCK
+    chain_tip = w3.eth.block_number
     
-    START_BLOCK = 0 
+    # --- FAST FORWARD LOGIC ---
+    if current_sync_block > chain_tip:
+         current_sync_block = chain_tip - 10
+         
+    print(f"⏩ Fast-forwarding: Skipping from {current_sync_block} to {chain_tip}...")
+    current_sync_block = chain_tip - 5
+    # --------------------------
+
+    print(f"📥 Indexing from block {current_sync_block}...")
 
     while True:
         try:
-            async with async_session() as session:
-                lock_logs = contract.events.LockCreated.get_logs(fromBlock=START_BLOCK)
-                
+            latest_block = w3.eth.block_number
+            
+            if current_sync_block > latest_block:
+                await asyncio.sleep(10) 
+                continue
+
+            end_block = min(current_sync_block + 5, latest_block)
+
+            async with IndexerSession() as session:
+                # FIX 3: Added type: ignore to silence Pylance on get_logs
+                lock_logs = contract.events.LockCreated.get_logs(  # type: ignore
+                    fromBlock=current_sync_block, toBlock=end_block
+                )
                 for event in lock_logs:
                     await process_lock_created(session, event, w3)
 
-                withdraw_logs = contract.events.Withdrawal.get_logs(fromBlock=START_BLOCK)
-                
+                withdraw_logs = contract.events.Withdrawal.get_logs(  # type: ignore
+                    fromBlock=current_sync_block, toBlock=end_block
+                )
                 for event in withdraw_logs:
                     await session.execute(
                         update(Lock).where(Lock.id == event['args']['lockId']).values(withdrawn=True)
                     )
+                    print(f"🔓 Processed Withdrawal for Lock #{event['args']['lockId']}")
                 
-                emergency_logs = contract.events.EmergencyWithdrawal.get_logs(fromBlock=START_BLOCK)
+                emergency_logs = contract.events.EmergencyWithdrawal.get_logs(  # type: ignore
+                    fromBlock=current_sync_block, toBlock=end_block
+                ) 
                 for event in emergency_logs:
                     await session.execute(
                         update(Lock).where(Lock.id == event['args']['lockId']).values(withdrawn=True)
                     )
+                    print(f"🚨 Processed Emergency Withdrawal for Lock #{event['args']['lockId']}")
 
                 await session.commit()
-            print("Sleeping 10s...")
-            await asyncio.sleep(10)
+            
+            current_sync_block = end_block + 1
+            await asyncio.sleep(0.5) 
             
         except Exception as e:
-            print(f"Error in Indexer: {e}")
+            print(f"❌ Indexer Error: {e}")
             await asyncio.sleep(5)
 
+# --- ENTRY POINT FOR MAIN.PY ---
+
+def start_indexer():
+    """Wrapper to run the async loop in a separate thread"""
+    asyncio.run(_indexer_logic())
+
 if __name__ == "__main__":
-    try:
-        asyncio.run(sync_events())
-    except KeyboardInterrupt:
-        print("Indexer Stopped")
+    start_indexer()
