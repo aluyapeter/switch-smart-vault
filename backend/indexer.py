@@ -10,11 +10,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- CONFIGURATION ---
 RPC_URL = os.getenv("RPC_URL")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Auto-fix DB URL for asyncpg (Render/Supabase compatibility)
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 elif DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
@@ -26,10 +24,8 @@ if not RPC_URL:
 if not DATABASE_URL:
     print("❌ CRITICAL: DATABASE_URL is missing from .env")
 
-# FIX 1: Tell Pylance "We promise this is a string"
 assert DATABASE_URL is not None, "DATABASE_URL must be set"
 
-# --- LOCAL DB SETUP (THREAD SAFE) ---
 indexer_engine = create_async_engine(DATABASE_URL, echo=False)
 IndexerSession = async_sessionmaker(
     bind=indexer_engine,
@@ -38,7 +34,6 @@ IndexerSession = async_sessionmaker(
     autoflush=False
 )
 
-# Load Contract Config
 CONTRACT_ADDRESS = ""
 START_BLOCK = 10179178
 try:
@@ -49,7 +44,6 @@ try:
 except FileNotFoundError:
     print("⚠️ Config not found. Using defaults.")
 
-# --- HELPER FUNCTIONS ---
 
 def get_contract(w3):
     possible_paths = ["../build/contracts/SwitchV2.json", "build/contracts/SwitchV2.json"]
@@ -109,13 +103,11 @@ async def process_lock_created(session, event, w3):
     except Exception as e:
         print(f"⚠️ Error processing lock: {e}")
 
-# --- MAIN WORKER LOOP ---
 
 async def _indexer_logic():
     """The async logic that runs inside the thread"""
     print("🚀 Indexer Thread Started...")
     
-    # FIX 2: Added Timeout! This prevents the indexer from hanging silently.
     w3 = Web3(Web3.HTTPProvider(RPC_URL, request_kwargs={'timeout': 10}))
     
     if not w3.is_connected():
@@ -130,7 +122,6 @@ async def _indexer_logic():
     current_sync_block = START_BLOCK
     chain_tip = w3.eth.block_number
     
-    # --- FAST FORWARD LOGIC ---
     if current_sync_block > chain_tip:
          current_sync_block = chain_tip - 10
          
@@ -151,7 +142,6 @@ async def _indexer_logic():
             end_block = min(current_sync_block + 5, latest_block)
 
             async with IndexerSession() as session:
-                # FIX 3: Added type: ignore to silence Pylance on get_logs
                 lock_logs = contract.events.LockCreated.get_logs(  # type: ignore
                     fromBlock=current_sync_block, toBlock=end_block
                 )
@@ -185,7 +175,6 @@ async def _indexer_logic():
             print(f"❌ Indexer Error: {e}")
             await asyncio.sleep(5)
 
-# --- ENTRY POINT FOR MAIN.PY ---
 
 def start_indexer():
     """Wrapper to run the async loop in a separate thread"""
