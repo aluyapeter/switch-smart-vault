@@ -46,7 +46,11 @@ except FileNotFoundError:
 
 
 def get_contract(w3):
-    possible_paths = ["../build/contracts/SwitchV2.json", "build/contracts/SwitchV2.json"]
+    possible_paths = [
+        "abis/SwitchV2.json",
+        "../build/contracts/SwitchV2.json",
+        "build/contracts/SwitchV2.json"
+    ]
     abi = None
     
     for path in possible_paths:
