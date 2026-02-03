@@ -19,7 +19,7 @@
 
 - React (Vite)
 - TypeScript
-- Tailwind CSS (v3)
+- Scss
 - Ethers.js (v6)
 - Zustand (State Management)
 
