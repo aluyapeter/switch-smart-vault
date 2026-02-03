@@ -1,0 +1,91 @@
+@use "../styles/variables" as *;
+@use "sass:color";
+
+.container {
+  margin-top: 1rem;
+}
+
+.standardBtn {
+  width: 100%;
+  padding: 0.75rem;
+  background: $success;
+  color: white;
+  border-radius: 8px;
+  font-weight: bold;
+
+  &:hover {
+    // background: darken($success, 10%);
+    background: color.adjust($success, $lightness: -10%);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+}
+
+.emergencyBtn {
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  border: 1px solid $error;
+  color: $error;
+  border-radius: 8px;
+  font-size: 0.875rem;
+
+  &:hover {
+    background: rgba($error, 0.1);
+  }
+}
+
+.warningBox {
+  background: rgba($error, 0.1);
+  border: 1px solid $error;
+  padding: 1rem;
+  border-radius: 8px;
+  animation: fadeIn 0.2s ease;
+
+  p {
+    font-size: 0.9rem;
+    color: #fca5a5;
+    margin-bottom: 1rem;
+    line-height: 1.4;
+  }
+}
+
+.confirmBtn {
+  width: 100%;
+  padding: 0.5rem;
+  background: $error;
+  color: white;
+  border-radius: 6px;
+  font-weight: bold;
+
+  &:hover {
+    // background: darken($error, 10%);
+    background: color.adjust($error, $lightness: -10%);
+  }
+}
+
+.cancelBtn {
+  margin-top: 0.5rem;
+  width: 100%;
+  padding: 0.5rem;
+  background: transparent;
+  color: $text-muted;
+  font-size: 0.8rem;
+
+  &:hover {
+    color: white;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

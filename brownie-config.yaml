@@ -1,7 +1,29 @@
+# brownie-config.yaml
+
+# 1. Load environment variables from .env file
+dotenv: .env
+
+# 2. Your existing dependencies (Keep this!)
 dependencies:
   - OpenZeppelin/openzeppelin-contracts@4.9.3
 
+# 3. Your existing compiler settings (Keep this!)
 compiler:
   solc:
     remappings:
       - "@openzeppelin=OpenZeppelin/openzeppelin-contracts@4.9.3"
+
+# 4. NEW: Wallet configuration
+# This tells Brownie to look for "PRIVATE_KEY" in your .env file
+wallet:
+  from_key: ${PRIVATE_KEY}
+
+# 5. NEW: API Keys for verification
+# This tells Brownie to look for "ETHERSCAN_TOKEN" in your .env file
+api_keys:
+  etherscan: ${ETHERSCAN_TOKEN}
+
+# 6. NEW: Network specific settings
+networks:
+  sepolia:
+    verify: True

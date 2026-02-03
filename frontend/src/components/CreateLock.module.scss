@@ -1,0 +1,48 @@
+@use "../styles/variables" as *;
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.inputGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  label {
+    font-size: 0.875rem;
+    color: $text-muted;
+  }
+  input {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 0.75rem;
+    border-radius: 8px;
+    color: white;
+    font-size: 1rem;
+
+    &:focus {
+      border-color: $primary;
+      outline: none;
+    }
+  }
+}
+
+.submitBtn {
+  background: $primary;
+  color: white;
+  padding: 1rem;
+  border-radius: 8px;
+  font-weight: bold;
+  margin-top: 1rem;
+
+  &:hover {
+    background: $primary-hover;
+  }
+  &:disabled {
+    background: gray;
+    cursor: not-allowed;
+  }
+}

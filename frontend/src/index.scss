@@ -1,0 +1,42 @@
+@use "./styles/variables" as *;
+
+body {
+  margin: 0;
+  // font-family:
+  //   "Inter",
+  //   -apple-system,
+  //   BlinkMacSystemFont,
+  //   sans-serif;
+  // font-family: "Roboto", sans-serif;
+  // font-family: "Bitcount Single", system-ui;
+  font-family: "Inter", sans-serif;
+  // font-family: "JetBrains Mono", monospace;
+  background-color: $bg-dark;
+  color: $text-main;
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box; // Fixes the padding math issue
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 700;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
