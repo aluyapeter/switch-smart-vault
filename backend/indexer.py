@@ -147,13 +147,13 @@ async def _indexer_logic():
 
             async with IndexerSession() as session:
                 lock_logs = contract.events.LockCreated.get_logs(  # type: ignore
-                    fromBlock=current_sync_block, toBlock=end_block
+                    from_block=current_sync_block, to_block=end_block
                 )
                 for event in lock_logs:
                     await process_lock_created(session, event, w3)
 
                 withdraw_logs = contract.events.Withdrawal.get_logs(  # type: ignore
-                    fromBlock=current_sync_block, toBlock=end_block
+                    from_block=current_sync_block, to_block=end_block
                 )
                 for event in withdraw_logs:
                     await session.execute(
@@ -162,7 +162,7 @@ async def _indexer_logic():
                     print(f"🔓 Processed Withdrawal for Lock #{event['args']['lockId']}")
                 
                 emergency_logs = contract.events.EmergencyWithdrawal.get_logs(  # type: ignore
-                    fromBlock=current_sync_block, toBlock=end_block
+                    from_block=current_sync_block, to_block=end_block
                 ) 
                 for event in emergency_logs:
                     await session.execute(
