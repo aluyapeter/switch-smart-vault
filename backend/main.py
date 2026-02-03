@@ -55,7 +55,11 @@ app = FastAPI(lifespan=lifespan, title="Switch V2 API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://switch-api-erex.onrender.com",
+        "https://switch-smart-vault-8jae.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
