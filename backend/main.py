@@ -16,7 +16,7 @@ from web3 import Web3
 from eth_account.messages import encode_defunct
 from dotenv import load_dotenv
 
-from database import get_db
+from database import get_db, init_db
 from models import User, Lock
 import schemas
 
@@ -36,6 +36,10 @@ blockchain_state = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Starting Switch API...")
+
+    print("🛠️ Checking database tables...")
+    await init_db()
+    print("✅ Database tables checked/created.")
 
     indexer_thread = threading.Thread(target=start_indexer, daemon=True)
     indexer_thread.start()
