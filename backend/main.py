@@ -7,7 +7,7 @@ from typing import List
 import threading
 from indexer import start_indexer
 
-from fastapi import FastAPI, Depends, HTTPException, Body, status
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select, func

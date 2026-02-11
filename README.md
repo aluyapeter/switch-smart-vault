@@ -143,7 +143,7 @@ cd ../frontend
 npm install
 
 # 2. Configure Environment Variables (.env)
-# VITE_API_URL="http://localhost:8000"
+VITE_API_URL="http://localhost:8000"
 
 # 3. Run the development server
 npm run dev -- --port 3000
