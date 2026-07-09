@@ -79,14 +79,14 @@ The backend requires a database connection and an RPC URL to talk to the blockch
 ```bash
 cd backend
 
-# 1. Create a virtual environment
+# Create a virtual environment
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 2. Install dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# 3. Configure Environment Variables
+# Configure Environment Variables
 # Create a .env file in the /backend folder and add:
 
 # Database
